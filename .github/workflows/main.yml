@@ -1,4 +1,4 @@
-name: Deploy Application
+name: Deploy Docker App
 
 on:
   push:
@@ -18,19 +18,40 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
           chmod 400 key.pem
 
-      - name: Copy index.html to App Server
+      - name: Copy Project to EC2
         run: |
           scp -o StrictHostKeyChecking=no \
           -i key.pem \
-          index.html \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/
+          -r . \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/app
 
-      - name: Deploy to Nginx
+      - name: Deploy Docker Container
         run: |
           ssh -o StrictHostKeyChecking=no \
           -i key.pem \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
 
-          sudo cp /tmp/index.html /var/www/html/index.html
+          cd /home/ubuntu/app
+
+          # install docker if missing
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo apt update
+            sudo apt install -y docker.io
+            sudo systemctl enable docker
+            sudo systemctl start docker
+          fi
+
+          # stop old container
+          sudo docker stop mynginx || true
+          sudo docker rm mynginx || true
+
+          # build image
+          sudo docker build -t mynginx .
+
+          # run container
+          sudo docker run -d \
+            --name mynginx \
+            -p 80:80 \
+            mynginx
 
           EOF
