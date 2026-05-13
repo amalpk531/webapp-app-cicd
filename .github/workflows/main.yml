@@ -10,38 +10,47 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create PEM File
+      - name: Create PEM
         run: |
           echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
           chmod 400 key.pem
 
-      - name: Copy Project to EC2
-        run: |
-          scp -o StrictHostKeyChecking=no \
-          -i key.pem \
-          -r . \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/app
-
-      - name: Deploy Docker Container
+      - name: Prepare EC2 Directory
         run: |
           ssh -o StrictHostKeyChecking=no \
           -i key.pem \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ubuntu@${{ vars.EC2_HOST }} \
+          "mkdir -p /home/ubuntu/app"
+
+      - name: Copy Files
+        run: |
+          scp -o StrictHostKeyChecking=no \
+          -i key.pem \
+          Dockerfile index.html \
+          ubuntu@${{ vars.EC2_HOST }}:/home/ubuntu/app/
+
+      - name: Deploy Container
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+          -i key.pem \
+          ubuntu@${{ vars.EC2_HOST }} << 'EOF'
 
           cd /home/ubuntu/app
+
+          ls -la
 
           # install docker if missing
           if ! command -v docker >/dev/null 2>&1; then
             sudo apt update
             sudo apt install -y docker.io
-            sudo systemctl enable docker
             sudo systemctl start docker
+            sudo systemctl enable docker
           fi
 
-          # stop old container
+          # remove old container if exists
           sudo docker stop mynginx || true
           sudo docker rm mynginx || true
 
